@@ -56,18 +56,27 @@ curl http://localhost:8000/v1/models -H "Authorization: Bearer atp-..."
 | Endpoint | Compatible with |
 |----------|-----------------|
 | `GET /v1/models` | OpenAI (project allowlist) |
-| `POST /v1/chat/completions` | OpenAI (+ streaming) |
+| `POST /v1/chat/completions` | OpenAI (+ streaming, + Anthropic translation) |
 | `POST /v1/messages` | Anthropic (+ streaming) |
 | `POST /v1/models/{model}:generateContent` | Gemini |
 | `GET/POST /admin/*` | Console API (X-Admin-Token) |
+| `GET/POST/PUT/DELETE /manage/*` | Control plane + RBAC |
+| `GET /metrics` | Prometheus metrics |
 | `GET /` | Vue console |
 
 Errors follow each SDK's shape: `400/401/402/403/429/502`.
 
+## Migrations & Docker
+
+```bash
+uv run alembic upgrade head          # apply schema (prod path; dev auto-creates)
+docker compose up --build            # gateway + Postgres + Redis
+```
+
 ## Tests
 
 ```bash
-uv run pytest -q
+uv run pytest -q                     # 42 tests
 ```
 
 ## Phase map
@@ -75,6 +84,11 @@ uv run pytest -q
 - **Phase 1** — proxy, `atp-…` keys, credit ledger + metering, model allowlist,
   streaming, error contract, minimal console.
 - **Phase 2** — orgs/users/memberships + roles, per-key rate limiting,
-  payments/top-ups (mock + Stripe-ready), request logs + analytics, richer console.
+  payments/top-ups (mock + Stripe-ready), request logs + analytics, Vue console.
+- **Phase 3** — control plane (`/manage/*`) with CRUD, **RBAC** (owner/admin/member)
+  + user sessions, activity log, Alembic migrations.
+- **Phase 4** — monthly spend **budgets**, upstream **retries** w/ backoff,
+  cross-provider **translation** (OpenAI→Anthropic), Prometheus **`/metrics`**,
+  Docker/compose/Makefile.
 
 See [`doc/design-and-implementation.md`](./doc/design-and-implementation.md).

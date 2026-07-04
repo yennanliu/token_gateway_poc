@@ -7,8 +7,8 @@ forwarded verbatim; only the auth header and host change.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
-from typing import Any
 
 import httpx
 
@@ -73,8 +73,28 @@ def gemini_upstream(path: str) -> Upstream:
     )
 
 
+_RETRYABLE_STATUS = {502, 503, 504}
+
+
 async def forward_json(up: Upstream, body: bytes) -> httpx.Response:
-    return await get_client().post(up.url, content=body, headers=up.headers)
+    """POST with capped exponential backoff on transient failures (Phase 4)."""
+    s = get_settings()
+    attempt = 0
+    last_exc: Exception | None = None
+    while True:
+        try:
+            resp = await get_client().post(up.url, content=body, headers=up.headers)
+        except (httpx.ConnectError, httpx.TimeoutException) as exc:
+            last_exc = exc
+            resp = None
+        if resp is not None and resp.status_code not in _RETRYABLE_STATUS:
+            return resp
+        if attempt >= s.max_retries:
+            if resp is not None:
+                return resp
+            raise last_exc  # type: ignore[misc]
+        await asyncio.sleep(s.retry_backoff_seconds * (2**attempt))
+        attempt += 1
 
 
 async def forward_stream(up: Upstream, body: bytes) -> AsyncIterator[bytes]:

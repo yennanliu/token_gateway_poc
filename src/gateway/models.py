@@ -34,6 +34,14 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+# Role hierarchy (higher = more privilege). Used by RBAC (Phase 3).
+ROLE_RANK = {"member": 1, "admin": 2, "owner": 3}
+
+
+def role_at_least(role: str, minimum: str) -> bool:
+    return ROLE_RANK.get(role, 0) >= ROLE_RANK.get(minimum, 99)
+
+
 class Organization(Base):
     __tablename__ = "organizations"
 
@@ -79,6 +87,10 @@ class Workspace(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     credit_micros: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    # Optional monthly spend cap (micros). 0 = unlimited (Phase 4).
+    monthly_budget_micros: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=0
+    )
 
     organization: Mapped[Organization | None] = relationship(back_populates="workspaces")
     projects: Mapped[list["Project"]] = relationship(back_populates="workspace")
@@ -177,6 +189,32 @@ class RequestLog(Base):
     latency_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class Session(Base):
+    """A console/user session bearer token (Phase 3). token_hash = sha256(token)."""
+
+    __tablename__ = "sessions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class ActivityLog(Base):
+    """Security/audit events, scoped to an org (Phase 3)."""
+
+    __tablename__ = "activity_logs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    org_id: Mapped[str | None] = mapped_column(
+        ForeignKey("organizations.id"), nullable=True
+    )
+    actor: Mapped[str] = mapped_column(String(320), nullable=False)
+    action: Mapped[str] = mapped_column(String(64), nullable=False)
+    target: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 

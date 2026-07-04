@@ -52,6 +52,15 @@ class Settings(BaseSettings):
     micros_per_credit: int = 1_000_000
     cents_per_credit: int = 1  # 1 credit == $0.01
 
+    # --- Phase 4 ------------------------------------------------------------
+    # Route OpenAI-format requests for claude-* models through translation.
+    enable_translation: bool = False
+    # Upstream retry policy for transient failures (connect/timeout/5xx).
+    max_retries: int = 2
+    retry_backoff_seconds: float = 0.2
+    # Optional Redis DSN for rate limiting across instances (unused if blank).
+    redis_url: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

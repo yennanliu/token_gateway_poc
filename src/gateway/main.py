@@ -6,9 +6,9 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 
-from . import admin
+from . import admin, manage, metrics
 from .db import create_all
 from .errors import GatewayError, gateway_error_handler
 from .routers import anthropic, gemini, models, openai
@@ -35,12 +35,17 @@ def create_app() -> FastAPI:
     app.include_router(anthropic.router)
     app.include_router(gemini.router)
 
-    # Console API
+    # Console API + management (control plane) API
     app.include_router(admin.router)
+    app.include_router(manage.router)
 
     @app.get("/health")
     async def health():
         return {"status": "ok"}
+
+    @app.get("/metrics")
+    async def prometheus_metrics():
+        return PlainTextResponse(metrics.render_prometheus())
 
     @app.get("/")
     async def console():

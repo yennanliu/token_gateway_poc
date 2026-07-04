@@ -13,7 +13,7 @@ from fastapi import Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from . import billing, errors
+from . import billing, budgets, errors
 from .config import get_settings
 from .keys import hash_key
 from .models import ApiKey, Project, ProjectModel, Workspace
@@ -98,6 +98,11 @@ async def guard(
 
     if not await billing.has_credit(session, ctx.workspace.id):
         raise errors.payment_required(style)
+
+    if not await budgets.within_budget(session, ctx.workspace):
+        raise errors.GatewayError(
+            402, "budget_exceeded", "Monthly spend budget exceeded.", style
+        )
 
     if not await model_enabled(session, ctx.project.id, model):
         raise errors.forbidden_model(model, style)

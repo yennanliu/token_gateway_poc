@@ -28,7 +28,7 @@ os.environ.update(
     }
 )
 
-from gateway import db  # noqa: E402
+from gateway import db, metrics  # noqa: E402
 from gateway.config import get_settings  # noqa: E402
 from gateway.keys import display_prefix, generate_key, hash_key  # noqa: E402
 from gateway.main import create_app  # noqa: E402
@@ -50,6 +50,8 @@ async def engine():
     db.configure_engine(eng)
     await db.create_all()
     limiter.reset()
+    metrics.reset()
+    get_settings.cache_clear()
     yield eng
     await eng.dispose()
 

@@ -17,9 +17,9 @@ from fastapi import Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from . import auth, billing, errors, logs
+from . import auth, billing, errors, logs, metrics, translate
 from .db import get_sessionmaker
-from .upstream import Upstream, forward_json, forward_stream
+from .upstream import Upstream, anthropic_upstream, forward_json, forward_stream
 
 UsageExtractor = Callable[[dict[str, Any]], tuple[int, int]]
 StreamUsageParser = Callable[[bytes], tuple[int, int]]
@@ -83,6 +83,7 @@ async def handle(
         raise errors.upstream_unavailable(style)
 
     if resp.status_code >= 400:
+        metrics.record_request(endpoint, model, resp.status_code)
         await logs.record_request(
             session,
             endpoint=endpoint,
@@ -96,6 +97,12 @@ async def handle(
 
     data = resp.json()
     in_tok, out_tok = usage_of(data)
+    await _settle(session, ctx, endpoint, model, in_tok, out_tok, resp.status_code, start)
+    return JSONResponse(status_code=resp.status_code, content=data)
+
+
+async def _settle(session, ctx, endpoint, model, in_tok, out_tok, status, start):
+    """Bill + log + metrics for a completed call."""
     await billing.record_usage_and_debit(
         session,
         workspace_id=ctx.workspace.id,
@@ -104,12 +111,12 @@ async def handle(
         model_id=model,
         input_tokens=in_tok,
         output_tokens=out_tok,
-        status=resp.status_code,
+        status=status,
     )
     await logs.record_request(
         session,
         endpoint=endpoint,
-        status=resp.status_code,
+        status=status,
         latency_ms=_now_ms(start),
         api_key_id=ctx.api_key.id,
         project_id=ctx.project.id,
@@ -117,7 +124,40 @@ async def handle(
         input_tokens=in_tok,
         output_tokens=out_tok,
     )
-    return JSONResponse(status_code=resp.status_code, content=data)
+    metrics.record_request(endpoint, model, status)
+    metrics.record_tokens(model, in_tok, out_tok)
+
+
+async def handle_translated(
+    request: Request,
+    session: AsyncSession,
+    *,
+    endpoint: str,
+    style: errors.Style,
+    model: str,
+    body: dict,
+):
+    """OpenAI-format request → Anthropic model (Phase 4). Non-streaming."""
+    start = time.monotonic()
+    ctx = await auth.guard(request, session, model=model, style=style)
+
+    anthropic_body = translate.openai_to_anthropic(body)
+    raw = json.dumps(anthropic_body).encode("utf-8")
+    try:
+        resp = await forward_json(anthropic_upstream("/v1/messages"), raw)
+    except httpx.HTTPError:
+        raise errors.upstream_unavailable(style)
+
+    if resp.status_code >= 400:
+        metrics.record_request(endpoint, model, resp.status_code)
+        return JSONResponse(status_code=resp.status_code, content=_safe_json(resp))
+
+    upstream_json = resp.json()
+    openai_shaped = translate.anthropic_to_openai(upstream_json, model)
+    in_tok = openai_shaped["usage"]["prompt_tokens"]
+    out_tok = openai_shaped["usage"]["completion_tokens"]
+    await _settle(session, ctx, endpoint, model, in_tok, out_tok, 200, start)
+    return JSONResponse(status_code=200, content=openai_shaped)
 
 
 def _stream_response(
@@ -160,6 +200,8 @@ def _stream_response(
                     input_tokens=in_tok,
                     output_tokens=out_tok,
                 )
+                metrics.record_request(endpoint, model, 200)
+                metrics.record_tokens(model, in_tok, out_tok)
 
     return StreamingResponse(gen(), media_type="text/event-stream")
 
