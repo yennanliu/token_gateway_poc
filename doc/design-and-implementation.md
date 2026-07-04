@@ -10,6 +10,11 @@ project layout, and step-by-step implementation order. **Guiding principle:
 keep the first phase simple.** No microservices, no queues, no warehouse —
 one Python service + Postgres.
 
+**Methodology: Test-Driven Development (TDD).** Every step below is written
+**test-first** — we write a failing test that specifies the behavior, then write
+the minimum code to make it pass, then refactor. Red → Green → Refactor. No
+production code is written without a failing test that demands it.
+
 ---
 
 ## 1. Scope
@@ -23,9 +28,13 @@ one Python service + Postgres.
 - Core endpoints: `GET /v1/models`, `POST /v1/chat/completions`,
   `POST /v1/messages` (Anthropic), `:generateContent` (Gemini).
 - Per-project model allowlist.
+- A **minimal console UI**: a single static `index.html` using **Vue.js (via
+  CDN)** that shows the workspace credit balance, lists API keys, and shows
+  recent usage — read-only, talking to a few small admin JSON endpoints.
 
 ### Out of scope (later phases)
-- Web console / dashboards (manage via SQL / admin CLI in Phase 1).
+- A full SPA console / build pipeline (Phase 1 is one static HTML file, no build
+  step).
 - Payments (Stripe) — top-ups done manually via a script.
 - Rate limiting, request-log UI, analytics warehouse.
 - Format *translation* between providers (Phase 1 is pass-through per provider).
@@ -46,9 +55,11 @@ one Python service + Postgres.
 | Migrations | **Alembic** | schema evolution |
 | Config | **pydantic-settings** | env-based config |
 | Hashing | **hashlib (SHA-256)** | key hashing (Phase 1) |
-| Tests | **pytest** + **respx** | mock upstream HTTP |
+| Tests | **pytest** + **pytest-asyncio** + **respx** + **httpx** test client | TDD; mock upstream HTTP |
+| Frontend | **Vue.js 3 via CDN** in one static `index.html` | no build step, simplest possible console |
 
-Keep dependencies minimal. Everything runs as **one process**.
+Keep dependencies minimal. Everything runs as **one process**. The frontend is a
+single HTML file served by FastAPI (or opened directly) — **no npm, no bundler**.
 
 ---
 
@@ -76,15 +87,25 @@ token_gateway_poc/
 │       │   ├── openai.py     # POST /v1/chat/completions
 │       │   ├── anthropic.py  # POST /v1/messages
 │       │   └── gemini.py     # POST /v1/models/{model}:generateContent
-│       └── providers/
-│           ├── base.py       # adapter interface
-│           ├── openai.py     # forward to api.openai.com
-│           ├── anthropic.py  # forward to api.anthropic.com
-│           └── gemini.py     # forward to generativelanguage.googleapis.com
+│       ├── providers/
+│       │   ├── base.py       # adapter interface
+│       │   ├── openai.py     # forward to api.openai.com
+│       │   ├── anthropic.py  # forward to api.anthropic.com
+│       │   └── gemini.py     # forward to generativelanguage.googleapis.com
+│       └── admin.py          # small read-only JSON endpoints for the console
+├── frontend/
+│   └── index.html            # Vue 3 (CDN) console — balance, keys, usage
 ├── scripts/
 │   ├── create_key.py         # admin: mint a key for a project
 │   └── topup.py              # admin: add credits to a workspace
-└── tests/
+└── tests/                    # tests written FIRST, mirrors src/gateway/
+    ├── conftest.py           # fixtures: test DB, async client, seeded key
+    ├── test_auth.py
+    ├── test_billing.py
+    ├── test_allowlist.py
+    ├── test_proxy_openai.py
+    ├── test_streaming.py
+    └── test_admin.py
 ```
 
 ---
@@ -191,64 +212,115 @@ disconnects).
 
 ---
 
-## 7. Implementation steps (ordered, each testable)
+## 7. TDD workflow
 
-### Step 0 — Project scaffold
+Every step follows the same loop:
+
+1. **Red** — write a test in `tests/` that asserts the new behavior. Run it;
+   watch it fail for the right reason (`uv run pytest tests/test_x.py -x`).
+2. **Green** — write the minimum code in `src/gateway/` to make it pass.
+3. **Refactor** — clean up while keeping the suite green.
+4. Commit on green.
+
+Test infrastructure (build this in Step 0, before any feature):
+- `conftest.py` provides an **async test DB** (a throwaway Postgres schema or a
+  transaction rolled back per test), an **httpx AsyncClient** bound to the ASGI
+  app, and a **seeded fixture** (a workspace with credits + a project + one known
+  `atp-…` key whose raw value the test knows).
+- **respx** intercepts outbound calls to `api.openai.com` /
+  `api.anthropic.com` / Gemini, so tests never hit real providers and can assert
+  exactly what we forward (URL, injected key, body) and stub what comes back.
+
+Rule: **no production code without a failing test that requires it.**
+
+## 8. Implementation steps (ordered, TDD, each step = red→green→refactor)
+
+### Step 0 — Scaffold + test harness
 ```bash
 uv init
 uv add fastapi uvicorn httpx "sqlalchemy[asyncio]" asyncpg alembic pydantic-settings
-uv add --dev pytest respx
+uv add --dev pytest pytest-asyncio respx
 ```
-Create the `src/gateway/` layout above. `uv run uvicorn gateway.main:app --reload`
-should serve a `/health` endpoint.
+- Create the `src/gateway/` layout and `tests/conftest.py` fixtures above.
+- **First test:** `test_health` — `GET /health` returns `200 {"status":"ok"}`.
+  Red → implement the route → green. This proves the harness works.
 
 ### Step 1 — Bare OpenAI proxy (no auth, no billing)
-- Implement `POST /v1/chat/completions` → forward verbatim to
-  `https://api.openai.com/v1/chat/completions` with a hardcoded key from `.env`.
-- **Verify:** point the real OpenAI Python SDK at `base_url=http://localhost:8000/v1`
-  and get a completion. This is the whole thesis proven.
+- **Test first:** with respx stubbing `api.openai.com`, POST to
+  `/v1/chat/completions` and assert the response is forwarded and the upstream
+  received our real key + the same body.
+- Then implement the forward-verbatim route.
+- **End-to-end check (manual):** point the real OpenAI Python SDK at
+  `base_url=http://localhost:8000/v1` and get a completion. This is the whole
+  thesis proven.
 
 ### Step 2 — Database + models
-- Add `db.py`, `models.py`, Alembic migration for the tables in §4.
-- `scripts/create_key.py`: create a workspace, project, and one `atp-…` key;
-  print the raw key once.
+- **Test first:** `test_models` — inserting a workspace/project/key and querying
+  them back works; balance defaults to 0.
+- Implement `db.py`, `models.py`, and the Alembic migration for §4.
+- `scripts/create_key.py`: mint a workspace/project/`atp-…` key (print raw once).
 
 ### Step 3 — Authentication
-- `auth.py`: FastAPI dependency that extracts the key from any accepted location,
-  hashes it, resolves project/workspace, returns a context object.
-- Return `401` on failure. Wire it into the chat route.
+- **Test first (`test_auth.py`):** valid key in each accepted location resolves
+  to the right project; missing/unknown/revoked key → `401`.
+- Implement `auth.py` dependency (extract → sha256 → resolve → context) and wire
+  it into the chat route.
 
 ### Step 4 — Metering + credit ledger
-- `pricing.py`: static dict of `model -> (in_rate_micros, out_rate_micros)`.
-- After a (non-streaming) response, extract `usage`, compute cost, and in one
-  transaction insert `usage_event` + `ledger_entry` and decrement balance.
-- Add the `credit_micros <= 0 → 402` check before forwarding.
+- **Test first (`test_billing.py`):** given a stubbed upstream `usage`, after one
+  call the `usage_event` + `ledger_entry` are written and
+  `workspace.credit_micros` drops by exactly `in*in_rate + out*out_rate`. Also:
+  balance ≤ 0 → `402` and no forward happens.
+- Implement `pricing.py`, `billing.py` (atomic debit in one transaction), and the
+  pre-forward balance check.
 - `scripts/topup.py`: add credits (positive ledger entry).
-- **Verify:** balance goes down by the right amount after a call; `402` at zero.
 
 ### Step 5 — Model allowlist
-- Check requested `model` against `project_models`; `403` if absent.
+- **Test first (`test_allowlist.py`):** enabled model → forwards; disabled model
+  → `403` and no upstream call.
+- Implement the `project_models` check.
 
 ### Step 6 — Streaming
-- Use `httpx` streaming + FastAPI `StreamingResponse` to pass SSE through.
-- Meter/bill on stream close (parse usage from the terminal chunk).
-- **Verify:** streamed completion works and is billed.
+- **Test first (`test_streaming.py`):** respx streams SSE chunks; assert the
+  client receives them in order **and** billing runs on stream close (parse
+  `usage` from the terminal chunk).
+- Implement `httpx` streaming + FastAPI `StreamingResponse`; bill on close (even
+  on client disconnect).
 
-### Step 7 — Add Anthropic + Gemini adapters
-- `POST /v1/messages` → `api.anthropic.com` (Anthropic streaming events).
-- `POST /v1/models/{model}:generateContent` → Gemini host, accept
-  `x-goog-api-key`.
-- `GET /v1/models` → return the union of enabled models for the project.
-- **Verify:** each provider's official SDK works by only changing base URL + key.
+### Step 7 — Anthropic + Gemini adapters + model list
+- **Test first:** a proxy test per provider (respx-stubbed) + `GET /v1/models`
+  returns the union of the project's enabled models.
+- Implement `/v1/messages` → `api.anthropic.com`,
+  `/v1/models/{model}:generateContent` → Gemini (accept `x-goog-api-key`), and
+  `GET /v1/models`.
+- **End-to-end check:** each provider's official SDK works by changing only base
+  URL + key.
 
 ### Step 8 — Error contract & polish
-- Map failures to `400/401/402/403/429/502/503` in the shape each SDK expects.
-- Structured logging of every request (key id, model, tokens, status, latency).
+- **Test first:** each failure maps to `400/401/402/403/429/502/503` in the shape
+  the calling SDK expects.
+- Implement the error mapping + structured per-request logging (key id, model,
+  tokens, status, latency).
+
+### Step 9 — Minimal Vue.js console (`frontend/index.html`)
+- **Test first (`test_admin.py`):** small read-only admin endpoints return JSON —
+  e.g. `GET /admin/workspaces/{id}/summary` (balance + key list) and
+  `GET /admin/projects/{id}/usage` (recent `usage_events`). Assert shape + that
+  they require an admin token.
+- Implement those endpoints.
+- Build `frontend/index.html`: a single file loading **Vue 3 from a CDN** with an
+  inline `fetch()`-based app that renders the credit balance, a table of API keys
+  (prefix + created/revoked), and a recent-usage table. No build step; serve it
+  as a static file from FastAPI. Keep styling minimal (a little inline CSS).
+  Frontend is verified manually in the browser — no JS test framework in Phase 1.
 
 ---
 
-## 8. Definition of done (Phase 1)
+## 9. Definition of done (Phase 1)
 
+- [ ] Every feature was built test-first; the suite is green and covers auth,
+      billing math, allowlist, streaming, one proxy path per provider, and the
+      admin endpoints (all respx-mocked — no live provider calls in tests).
 - [ ] OpenAI, Anthropic, and Gemini official SDKs all work against the gateway
       by changing only base URL + `atp-…` key.
 - [ ] Requests are authenticated by hashed key → project.
@@ -256,13 +328,14 @@ should serve a `/health` endpoint.
 - [ ] Every request debits the workspace balance correctly and atomically.
 - [ ] `402` at zero credits; `403` for disabled models; `401` for bad keys.
 - [ ] Admin scripts can mint keys and top up credits.
-- [ ] Tests cover auth, billing math, allowlist, and one proxy path (respx-mocked).
+- [ ] The Vue `index.html` console shows balance, keys, and recent usage.
 
 ---
 
-## 9. Phase 2+ (later, not now)
+## 10. Phase 2+ (later, not now)
 
-- Web console (Next.js) for keys, dashboards, top-ups.
+- Grow the console into a real SPA (Vue with a build step / Vite) for key
+  creation, dashboards, and top-ups.
 - Stripe payments.
 - Redis rate limiting + per-key quotas.
 - Org/user/membership + roles (Owner/Admin/Member).
@@ -273,9 +346,11 @@ should serve a `/health` endpoint.
 
 ## Summary
 
-Phase 1 is a **single FastAPI service (Python + uv) + Postgres** that proxies
-OpenAI/Anthropic/Gemini via pass-through, authenticates hashed `atp-…` keys,
-meters tokens from upstream usage, and debits an integer credit ledger inside one
-transaction per request. Build it in eight verifiable steps, starting from a
-hardcoded bare proxy and layering auth → billing → allowlist → streaming →
-multi-provider. Consoles, payments, and rate limiting come in Phase 2.
+Phase 1 is a **single FastAPI service (Python + uv) + Postgres**, built
+**test-first (TDD)**, that proxies OpenAI/Anthropic/Gemini via pass-through,
+authenticates hashed `atp-…` keys, meters tokens from upstream usage, and debits
+an integer credit ledger inside one transaction per request. A **single Vue 3
+(CDN) `index.html`** provides a read-only console for balance, keys, and usage.
+Build it in ten red→green→refactor steps, starting from a hardcoded bare proxy
+and layering auth → billing → allowlist → streaming → multi-provider → console.
+Payments, rate limiting, and a full SPA come in Phase 2.
