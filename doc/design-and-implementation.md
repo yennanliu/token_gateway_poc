@@ -1,6 +1,6 @@
 # Design & Implementation Doc — Token Gateway (Phase 1)
 
-> Companion to [`how-atptoken-works.md`](./how-atptoken-works.md) and
+> Companion to [`reference-gateway.md`](./reference-gateway.md) and
 > [`how-to-build-a-token-gateway.md`](./how-to-build-a-token-gateway.md).
 > Concrete implementation design for a **Python + uv** MVP.
 > Compiled: 2026-07-05
@@ -22,7 +22,7 @@ production code is written without a failing test that demands it.
 ### In scope (Phase 1)
 - A single FastAPI service acting as an **OpenAI-compatible proxy** to real
   providers.
-- `atp-…` API keys (hashed at rest).
+- `gw-…` API keys (hashed at rest).
 - Token metering + a **credit ledger** in Postgres (debit on each request).
 - Streaming pass-through.
 - Core endpoints: `GET /v1/models`, `POST /v1/chat/completions`,
@@ -138,7 +138,7 @@ CREATE TABLE project_models (
 CREATE TABLE api_keys (
   id          UUID PRIMARY KEY,
   project_id  UUID NOT NULL REFERENCES projects(id),
-  key_prefix  TEXT NOT NULL,                  -- 'atp-' + first 8 chars (display)
+  key_prefix  TEXT NOT NULL,                  -- 'gw-' + first 8 chars (display)
   key_hash    TEXT NOT NULL UNIQUE,           -- sha256(raw key)
   revoked_at  TIMESTAMPTZ,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -226,7 +226,7 @@ Test infrastructure (build this in Step 0, before any feature):
 - `conftest.py` provides an **async test DB** (a throwaway Postgres schema or a
   transaction rolled back per test), an **httpx AsyncClient** bound to the ASGI
   app, and a **seeded fixture** (a workspace with credits + a project + one known
-  `atp-…` key whose raw value the test knows).
+  `gw-…` key whose raw value the test knows).
 - **respx** intercepts outbound calls to `api.openai.com` /
   `api.anthropic.com` / Gemini, so tests never hit real providers and can assert
   exactly what we forward (URL, injected key, body) and stub what comes back.
@@ -258,7 +258,7 @@ uv add --dev pytest pytest-asyncio respx
 - **Test first:** `test_models` — inserting a workspace/project/key and querying
   them back works; balance defaults to 0.
 - Implement `db.py`, `models.py`, and the Alembic migration for §4.
-- `scripts/create_key.py`: mint a workspace/project/`atp-…` key (print raw once).
+- `scripts/create_key.py`: mint a workspace/project/`gw-…` key (print raw once).
 
 ### Step 3 — Authentication
 - **Test first (`test_auth.py`):** valid key in each accepted location resolves
@@ -322,7 +322,7 @@ uv add --dev pytest pytest-asyncio respx
       billing math, allowlist, streaming, one proxy path per provider, and the
       admin endpoints (all respx-mocked — no live provider calls in tests).
 - [ ] OpenAI, Anthropic, and Gemini official SDKs all work against the gateway
-      by changing only base URL + `atp-…` key.
+      by changing only base URL + `gw-…` key.
 - [ ] Requests are authenticated by hashed key → project.
 - [ ] Streaming works for all three.
 - [ ] Every request debits the workspace balance correctly and atomically.
@@ -419,7 +419,7 @@ services.
 
 Phase 1 is a **single FastAPI service (Python + uv) + Postgres**, built
 **test-first (TDD)**, that proxies OpenAI/Anthropic/Gemini via pass-through,
-authenticates hashed `atp-…` keys, meters tokens from upstream usage, and debits
+authenticates hashed `gw-…` keys, meters tokens from upstream usage, and debits
 an integer credit ledger inside one transaction per request. A **single Vue 3
 (CDN) `index.html`** provides a read-only console for balance, keys, and usage.
 Build it in ten red→green→refactor steps, starting from a hardcoded bare proxy

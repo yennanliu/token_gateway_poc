@@ -38,7 +38,7 @@ async def test_workspace_summary_shape(client, seed):
     body = r.json()
     assert body["credits"] == 100.0
     assert len(body["keys"]) == 1
-    assert body["keys"][0]["prefix"].startswith("atp-")
+    assert body["keys"][0]["prefix"].startswith("gw-")
     assert body["keys"][0]["revoked"] is False
 
 

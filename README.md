@@ -1,14 +1,14 @@
 # token_gateway_poc
 
 A multi-provider **LLM API gateway** (OpenAI / Anthropic / Google Gemini
-compatible) with a single `atp-…` key, a credit ledger, token metering, rate
+compatible) with a single `gw-…` key, a credit ledger, token metering, rate
 limiting, and a minimal Vue console.
 
 Point any provider SDK at this gateway by changing only the **base URL** and
 **API key** — no wrapper library.
 
-Design docs live in [`doc/`](./doc): how atptoken.ai works, how to build one,
-and the [Phase 1/2 design & implementation plan](./doc/design-and-implementation.md).
+Design docs live in [`doc/`](./doc): the gateway concept, how to build one, and
+the [design & implementation plan](./doc/design-and-implementation.md).
 
 ## Stack
 
@@ -28,7 +28,7 @@ uv run python scripts/create_key.py \
   --workspace "Acme" --project "prod" \
   --models gpt-5.4 claude-sonnet-4-6 gemini-2.5-pro \
   --credits 100
-# -> prints an atp-… key AND the Workspace/Project IDs (save them)
+# -> prints an gw-… key AND the Workspace/Project IDs (save them)
 
 # 2. Set the REAL upstream keys, then run the gateway
 cp .env.example .env    # fill OPENAI_API_KEY etc.
@@ -41,14 +41,14 @@ uv run uvicorn gateway.main:app --reload
 
 ```python
 from openai import OpenAI
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="atp-...")
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="gw-...")
 client.chat.completions.create(
     model="gpt-5.4", messages=[{"role": "user", "content": "hi"}]
 )
 ```
 
 ```bash
-curl http://localhost:8000/v1/models -H "Authorization: Bearer atp-..."
+curl http://localhost:8000/v1/models -H "Authorization: Bearer gw-..."
 ```
 
 ## Endpoints
@@ -81,7 +81,7 @@ uv run pytest -q                     # 49 tests
 
 ## Phase map
 
-- **Phase 1** — proxy, `atp-…` keys, credit ledger + metering, model allowlist,
+- **Phase 1** — proxy, `gw-…` keys, credit ledger + metering, model allowlist,
   streaming, error contract, minimal console.
 - **Phase 2** — orgs/users/memberships + roles, per-key rate limiting,
   payments/top-ups (mock + Stripe-ready), request logs + analytics, Vue console.

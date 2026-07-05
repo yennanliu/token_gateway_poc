@@ -1,6 +1,6 @@
 """API key generation and hashing.
 
-Keys look like ``atp-<62 base62 chars>``. We store only the SHA-256 hash and a
+Keys look like ``gw-<62 base62 chars>``. We store only the SHA-256 hash and a
 short display prefix; the raw key is shown to the user exactly once.
 """
 
@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import secrets
 
-KEY_PREFIX = "atp-"
+KEY_PREFIX = "gw-"
 _ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
 _BODY_LEN = 62
 
@@ -24,5 +24,5 @@ def hash_key(raw: str) -> str:
 
 
 def display_prefix(raw: str) -> str:
-    """A short, safe-to-show identifier, e.g. ``atp-AbCdEfGh``."""
+    """A short, safe-to-show identifier, e.g. ``gw-AbCdEfGh``."""
     return raw[: len(KEY_PREFIX) + 8]

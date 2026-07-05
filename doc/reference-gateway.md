@@ -1,16 +1,16 @@
-# How atptoken.ai Works
+# Reference Gateway — Design Overview
 
-> Source: <https://atptoken.ai/docs/>
+> A reference design for a multi-provider LLM gateway.
 > Compiled: 2026-07-05
 
-This document explains what the **ATP Token** site/product is and how it works,
-based on its public documentation.
+This document describes the design of a reference multi-provider LLM gateway —
+the concept our implementation is based on.
 
 ---
 
 ## 1. What it is
 
-**ATP Token** is a **unified LLM API gateway**. It sits in front of multiple
+**Example Gateway** is a **unified LLM API gateway**. It sits in front of multiple
 model providers — **OpenAI, Anthropic, and Google Gemini** — and exposes them
 through a single, standardized, provider-compatible interface.
 
@@ -20,7 +20,7 @@ swap the *base URL* and the *API key*. No wrapper library is needed.
 > "The Gateway accepts the OpenAI, Anthropic, and Google GenAI SDKs using each
 > SDK's default authentication header — no wrapper library needed."
 
-One ATP key + one balance of credits gives you access to models across all three
+One gateway key + one balance of credits gives you access to models across all three
 providers.
 
 ---
@@ -34,7 +34,7 @@ Resources are organized as a nested hierarchy. Each level has a distinct job:
 | **Organization** | Billing and team boundary (the top-level tenant) |
 | **Workspace** | Credit container — holds the credit balance |
 | **Project** | Model allowlist + credit balance; defines *which* models are usable |
-| **API Key** | Scoped credential (`atp-…`, 92 chars) tied to a project |
+| **API Key** | Scoped credential (`gw-…`, 92 chars) tied to a project |
 
 Key idea: **the model list is the menu, not your key's permissions.** Being able
 to *see* a model via discovery doesn't mean your key/project is allowed to *use*
@@ -44,14 +44,14 @@ it — access is enabled per project.
 
 ## 3. Authentication
 
-Keys use the format `atp-…` (92 characters total). The gateway accepts the key
+Keys use the format `gw-…` (92 characters total). The gateway accepts the key
 in three locations so that each provider SDK works with its native header:
 
 | Location | Header / form | Used by |
 |----------|---------------|---------|
-| Bearer token | `Authorization: Bearer atp-…` | OpenAI SDK, Anthropic SDK, curl |
-| Google header | `x-goog-api-key: atp-…` | Google GenAI SDK |
-| Query parameter | `?key=atp-…` | REST clients |
+| Bearer token | `Authorization: Bearer gw-…` | OpenAI SDK, Anthropic SDK, curl |
+| Google header | `x-goog-api-key: gw-…` | Google GenAI SDK |
+| Query parameter | `?key=gw-…` | REST clients |
 
 ---
 
@@ -59,9 +59,9 @@ in three locations so that each provider SDK works with its native header:
 
 Different SDKs expect the version path in different places:
 
-- **OpenAI SDK / Codex:** `https://api.atptoken.ai/v1`
-- **Anthropic SDK / Claude Code:** `https://api.atptoken.ai`
-- **Google GenAI SDK:** `https://api.atptoken.ai`
+- **OpenAI SDK / Codex:** `https://api.example-gateway.ai/v1`
+- **Anthropic SDK / Claude Code:** `https://api.example-gateway.ai`
+- **Google GenAI SDK:** `https://api.example-gateway.ai`
 
 ---
 
@@ -71,8 +71,8 @@ Different SDKs expect the version path in different places:
 ```python
 from openai import OpenAI
 client = OpenAI(
-    base_url="https://api.atptoken.ai/v1",
-    api_key="atp-..."
+    base_url="https://api.example-gateway.ai/v1",
+    api_key="gw-..."
 )
 ```
 
@@ -80,8 +80,8 @@ client = OpenAI(
 ```python
 from anthropic import Anthropic
 client = Anthropic(
-    base_url="https://api.atptoken.ai",
-    api_key="atp-..."
+    base_url="https://api.example-gateway.ai",
+    api_key="gw-..."
 )
 ```
 
@@ -89,38 +89,38 @@ client = Anthropic(
 ```python
 from google import genai
 client = genai.Client(
-    api_key="atp-...",
-    http_options={"base_url": "https://api.atptoken.ai"}
+    api_key="gw-...",
+    http_options={"base_url": "https://api.example-gateway.ai"}
 )
 ```
 
 ### curl
 ```bash
 # List models
-curl https://api.atptoken.ai/v1/models \
-  -H "Authorization: Bearer atp-..."
+curl https://api.example-gateway.ai/v1/models \
+  -H "Authorization: Bearer gw-..."
 
 # OpenAI-compatible chat
-curl https://api.atptoken.ai/v1/chat/completions \
-  -H "Authorization: Bearer atp-..." \
+curl https://api.example-gateway.ai/v1/chat/completions \
+  -H "Authorization: Bearer gw-..." \
   -H "Content-Type: application/json" \
   -d '{"model":"<model>","messages":[{"role":"user","content":"hi"}]}'
 
 # Anthropic-compatible messages
-curl https://api.atptoken.ai/v1/messages \
-  -H "Authorization: Bearer atp-..." \
+curl https://api.example-gateway.ai/v1/messages \
+  -H "Authorization: Bearer gw-..." \
   -H "Content-Type: application/json" \
   -d '{"model":"<model>","max_tokens":256,"messages":[{"role":"user","content":"hi"}]}'
 
 # Gemini-compatible generate
-curl "https://api.atptoken.ai/v1/models/<model>:generateContent" \
-  -H "x-goog-api-key: atp-..." \
+curl "https://api.example-gateway.ai/v1/models/<model>:generateContent" \
+  -H "x-goog-api-key: gw-..." \
   -H "Content-Type: application/json" \
   -d '{"contents":[{"parts":[{"text":"hi"}]}]}'
 
 # File upload
-curl https://api.atptoken.ai/v1/files \
-  -H "Authorization: Bearer atp-..." \
+curl https://api.example-gateway.ai/v1/files \
+  -H "Authorization: Bearer gw-..." \
   -F "file=@./input.pdf"
 ```
 
@@ -187,8 +187,8 @@ their base URL.
 ### Claude Code (Anthropic CLI)
 Via environment variables:
 ```bash
-export ANTHROPIC_BASE_URL="https://api.atptoken.ai"
-export ANTHROPIC_AUTH_TOKEN="atp-..."
+export ANTHROPIC_BASE_URL="https://api.example-gateway.ai"
+export ANTHROPIC_AUTH_TOKEN="gw-..."
 export ANTHROPIC_API_KEY=""
 export ANTHROPIC_MODEL="claude-sonnet-4-6"
 ```
@@ -196,8 +196,8 @@ Or via `~/.claude/settings.json`:
 ```json
 {
   "env": {
-    "ANTHROPIC_BASE_URL": "https://api.atptoken.ai",
-    "ANTHROPIC_AUTH_TOKEN": "atp-...",
+    "ANTHROPIC_BASE_URL": "https://api.example-gateway.ai",
+    "ANTHROPIC_AUTH_TOKEN": "gw-...",
     "ANTHROPIC_API_KEY": ""
   },
   "model": "claude-sonnet-4-6"
@@ -208,16 +208,16 @@ Or via `~/.claude/settings.json`:
 `~/.codex/config.toml`:
 ```toml
 model = "gpt-5.4"
-model_provider = "atp"
+model_provider = "gw"
 
-[model_providers.atp]
-name = "ATP"
-base_url = "https://api.atptoken.ai/v1"
-env_key = "ATP_API_KEY"
+[model_providers.gw]
+name = "Gateway"
+base_url = "https://api.example-gateway.ai/v1"
+env_key = "GATEWAY_API_KEY"
 wire_api = "chat"
 ```
 ```bash
-export ATP_API_KEY="atp-..."
+export GATEWAY_API_KEY="gw-..."
 ```
 
 ---
@@ -266,9 +266,9 @@ export ATP_API_KEY="atp-..."
 
 ## Summary
 
-atptoken.ai is a **drop-in LLM gateway**: point any of the three major provider
-SDKs (or their CLIs like Claude Code / Codex) at `api.atptoken.ai`, authenticate
-with a single `atp-…` key, and consume OpenAI / Anthropic / Gemini models against
+This reference gateway is a **drop-in LLM gateway**: point any of the three major
+provider SDKs (or their CLIs like Claude Code / Codex) at `api.example-gateway.ai`, authenticate
+with a single `gw-…` key, and consume OpenAI / Anthropic / Gemini models against
 one shared pool of pay-as-you-go credits. Access is governed by a four-level
 Organization → Workspace → Project → Key hierarchy, with per-project model
 allowlists, usage analytics, and standard HTTP error semantics.

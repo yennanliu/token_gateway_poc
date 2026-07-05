@@ -40,7 +40,7 @@ async def test_full_control_plane_flow(client, engine):
             f"/manage/projects/{proj['id']}/keys", json={"name": "k1"}, headers=owner
         )
     ).json()
-    assert key["key"].startswith("atp-")
+    assert key["key"].startswith("gw-")
 
     # The freshly minted key works against the proxy surface.
     r = await client.get(

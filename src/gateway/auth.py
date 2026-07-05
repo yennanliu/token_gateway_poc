@@ -1,6 +1,6 @@
 """Authentication + request guarding.
 
-Extracts the ``atp-…`` key from any accepted location, resolves it to a
+Extracts the ``gw-…`` key from any accepted location, resolves it to a
 project/workspace, and (via ``guard``) enforces credit balance, the model
 allowlist, and rate limits before a request is forwarded upstream.
 """

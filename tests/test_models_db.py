@@ -13,7 +13,7 @@ async def test_seed_roundtrip(seed):
         proj = await s.get(Project, seed["project_id"])
         assert proj.workspace_id == ws.id
         key = await s.scalar(select(ApiKey).where(ApiKey.id == seed["api_key_id"]))
-        assert key.key_prefix.startswith("atp-")
+        assert key.key_prefix.startswith("gw-")
         # raw key is never stored
         assert seed["raw_key"] not in (key.key_hash, key.key_prefix)
 

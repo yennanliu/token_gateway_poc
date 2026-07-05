@@ -25,7 +25,7 @@ async def test_unknown_key_401(client, seed):
     r = await client.post(
         "/v1/chat/completions",
         json=_body(),
-        headers={"Authorization": "Bearer atp-doesnotexist"},
+        headers={"Authorization": "Bearer gw-doesnotexist"},
     )
     assert r.status_code == 401
 

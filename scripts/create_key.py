@@ -6,7 +6,7 @@ Usage:
         --models gpt-5.4 claude-sonnet-4-6 gemini-2.5-pro \
         --credits 100
 
-Prints the raw ``atp-…`` key ONCE (it is not recoverable afterwards).
+Prints the raw ``gw-…`` key ONCE (it is not recoverable afterwards).
 """
 
 from __future__ import annotations

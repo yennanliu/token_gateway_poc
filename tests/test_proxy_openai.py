@@ -31,7 +31,7 @@ async def test_chat_completion_forwarded(client, seed):
     assert r.status_code == 200
     assert r.json()["choices"][0]["message"]["content"] == "hi"
 
-    # Upstream received our REAL key, not the client's atp- key.
+    # Upstream received our REAL key, not the client's gw- key.
     assert route.called
     sent = route.calls.last.request
     assert sent.headers["authorization"] == "Bearer real-openai-key"

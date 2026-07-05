@@ -1,11 +1,11 @@
-# How to Build a Token Gateway (like atptoken.ai)
+# How to Build a Token Gateway
 
-> Companion to [`how-atptoken-works.md`](./how-atptoken-works.md).
+> Companion to [`reference-gateway.md`](./reference-gateway.md).
 > A blueprint for building your own multi-provider LLM gateway.
 > Compiled: 2026-07-05
 
-This document describes how to build a system with the same core idea as
-ATP Token: a **single OpenAI/Anthropic/Gemini-compatible API endpoint**, backed
+This document describes how to build a system with this core idea:
+a **single OpenAI/Anthropic/Gemini-compatible API endpoint**, backed
 by **one API key** and **one shared pool of pay-as-you-go credits**, that proxies
 requests to multiple upstream LLM providers while metering usage and billing.
 
@@ -76,7 +76,7 @@ count output tokens, then write the usage + ledger entry.
 
 ## 4. Data model
 
-Mirror ATP's four-level hierarchy:
+Mirror the reference gateway's four-level hierarchy:
 
 ```
 Organization (1) ─── (N) Workspace (holds credit balance)
@@ -99,7 +99,7 @@ project_models(project_id, model_id, enabled)                    -- the allowlis
 
 api_keys(
   id, project_id,
-  key_prefix,          -- e.g. 'atp-' + first 8 chars, for display
+  key_prefix,          -- e.g. 'gw-' + first 8 chars, for display
   key_hash,            -- store a hash, NEVER the raw key
   scopes, revoked_at, last_used_at, created_at
 )
@@ -127,7 +127,7 @@ Nothing gateway-specific here.
 
 ### [2] Authentication
 - Generate keys as `prefix-` + 32+ bytes of CSPRNG randomness, base62-encoded
-  (ATP uses `atp-…`, 92 chars total).
+  (the reference gateway uses `gw-…`, 92 chars total).
 - Store only a **hash** (SHA-256 or Argon2) + a display prefix. On each request:
   read the key from any accepted header/query, hash it, look it up, check
   `revoked_at`.
@@ -158,7 +158,7 @@ Each adapter knows how to talk to one upstream. Two designs:
   format. (Optional; start with pass-through per-provider.)
 
 The adapter:
-1. Removes the client's `atp-…` key.
+1. Removes the client's `gw-…` key.
 2. Injects the **real upstream key** (from your secrets manager).
 3. Rewrites the base URL to the provider's host.
 4. Forwards, streaming if requested.
@@ -172,7 +172,7 @@ The adapter:
 
 ### [7] Billing ledger
 - Price = `(input_tokens * in_rate) + (output_tokens * out_rate)` per model.
-- Convert to micro-credits (ATP: **1 credit = $0.01**).
+- Convert to micro-credits (reference: **1 credit = $0.01**).
 - Write a `usage_event` + a negative `ledger_entry`, decrement
   `workspaces.credit_balance_micros` **atomically** (single transaction).
 - Top-ups add positive ledger entries. Credits are **non-expiring**.
@@ -201,7 +201,7 @@ disconnect — bill for what was generated).
 
 ## 7. Error contract
 
-Adopt ATP's status codes so SDKs behave predictably:
+Adopt the reference gateway's status codes so SDKs behave predictably:
 
 | HTTP | When you return it |
 |------|--------------------|
@@ -278,7 +278,7 @@ steps 4–7 make it a *product*.
 
 ## Summary
 
-Building an atptoken.ai-style gateway is fundamentally: a **protocol-faithful
+Building this kind of gateway is fundamentally: a **protocol-faithful
 reverse proxy** (so provider SDKs work by changing only base URL + key), wrapped
 with **auth, per-project model allowlists, token metering, a credit ledger, and a
 console**. Start with a one-provider pass-through proxy, add key auth and a
