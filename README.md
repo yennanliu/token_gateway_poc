@@ -1,5 +1,7 @@
 # token_gateway_poc
 
+[![CI](https://github.com/yennanliu/token_gateway_poc/actions/workflows/ci.yml/badge.svg)](https://github.com/yennanliu/token_gateway_poc/actions/workflows/ci.yml)
+
 A multi-provider **LLM API gateway** (OpenAI / Anthropic / Google Gemini
 compatible) with a single `gw-…` key, a credit ledger, token metering, rate
 limiting, and a minimal Vue console.
@@ -76,8 +78,14 @@ docker compose up --build            # gateway + Postgres + Redis
 ## Tests
 
 ```bash
-uv run pytest -q                     # 49 tests
+uv run pytest -q                     # 91 tests
+uv run pytest -q -m unit             # 41 fast unit tests (pure logic, no app/DB)
+uv run pytest -q -m integration      # 50 full-stack tests (ASGI app + DB + mocked upstream)
 ```
+
+Tests are auto-tagged by location: `tests/unit/*` are `unit`, everything else is
+`integration`. CI (GitHub Actions) runs both on SQLite and applies the Alembic
+migrations against a real Postgres service.
 
 ## Phase map
 

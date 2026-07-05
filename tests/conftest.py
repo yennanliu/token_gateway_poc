@@ -40,6 +40,16 @@ get_settings.cache_clear()
 ADMIN_TOKEN = "test-admin-token"
 
 
+def pytest_collection_modifyitems(config, items):
+    """Auto-tag tests by location: tests/unit/* -> unit, everything else -> integration."""
+    for item in items:
+        path = str(item.fspath).replace("\\", "/")
+        if "/tests/unit/" in path:
+            item.add_marker(pytest.mark.unit)
+        else:
+            item.add_marker(pytest.mark.integration)
+
+
 @pytest_asyncio.fixture
 async def engine():
     eng = create_async_engine(

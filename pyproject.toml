@@ -37,6 +37,10 @@ packages = ["src/gateway"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "unit: fast, isolated tests of pure logic (no app/DB/network)",
+    "integration: full-stack tests through the ASGI app + DB + mocked upstream",
+]
 
 [tool.uv]
 package = true
