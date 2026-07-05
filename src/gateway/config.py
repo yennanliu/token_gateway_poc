@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     # credits immediately.
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
+    stripe_api_base: str = "https://api.stripe.com"
+    stripe_success_url: str = "http://localhost:8000/?topup=success"
+    stripe_cancel_url: str = "http://localhost:8000/?topup=cancel"
 
     # 1 credit = 1 cent (USD). Micros give integer precision: 1e6 micros = 1 credit.
     micros_per_credit: int = 1_000_000

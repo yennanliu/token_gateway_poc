@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, PlainTextResponse
 
-from . import admin, manage, metrics
+from . import admin, manage, metrics, ratelimit
 from .db import create_all
 from .errors import GatewayError, gateway_error_handler
 from .routers import anthropic, gemini, models, openai
@@ -20,6 +20,7 @@ FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await create_all()
+    ratelimit.build_from_settings()
     yield
     await close_client()
 

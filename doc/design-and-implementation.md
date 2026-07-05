@@ -393,6 +393,28 @@ Turn the admin-token-only surface into a real self-serve control plane.
 
 ---
 
+## 13. Phase 5 — Wiring the remaining backends (done)
+
+The two pieces earlier left as config-only scaffolding are now fully wired,
+each with a graceful fallback so the gateway still runs with zero external
+services.
+
+**Redis-backed rate limiting** (`ratelimit.py`)
+- Pluggable async limiter: in-memory token bucket (default) **or** a Redis
+  fixed-window counter when `REDIS_URL` is set. Selected at startup via
+  `build_from_settings()`. Tested with `fakeredis` (unit + through the gateway).
+
+**Stripe Checkout + webhooks** (`payments.py`)
+- `POST /admin/workspaces/{id}/checkout` creates a real Stripe Checkout Session
+  (via the REST API over httpx — no SDK dep) and returns its URL; the payment is
+  recorded `pending` with the session id.
+- `POST /admin/webhooks/stripe` verifies the `Stripe-Signature` HMAC and, on
+  `checkout.session.completed`, settles the payment and applies credits
+  (idempotent). Mock mode (no key) still settles top-ups immediately.
+- Tested with respx (Checkout API) + a locally signed webhook payload.
+
+---
+
 ## Summary
 
 Phase 1 is a **single FastAPI service (Python + uv) + Postgres**, built

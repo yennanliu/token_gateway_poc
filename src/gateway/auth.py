@@ -13,11 +13,10 @@ from fastapi import Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from . import billing, budgets, errors
+from . import billing, budgets, errors, ratelimit
 from .config import get_settings
 from .keys import hash_key
 from .models import ApiKey, Project, ProjectModel, Workspace
-from .ratelimit import limiter
 
 
 @dataclass
@@ -93,7 +92,7 @@ async def guard(
     rpm = ctx.api_key.rpm_limit
     if rpm is None:
         rpm = get_settings().default_rpm_limit
-    if not limiter.allow(ctx.api_key.id, rpm):
+    if not await ratelimit.allow(ctx.api_key.id, rpm):
         raise errors.rate_limited(style)
 
     if not await billing.has_credit(session, ctx.workspace.id):

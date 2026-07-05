@@ -76,7 +76,7 @@ docker compose up --build            # gateway + Postgres + Redis
 ## Tests
 
 ```bash
-uv run pytest -q                     # 42 tests
+uv run pytest -q                     # 49 tests
 ```
 
 ## Phase map
@@ -90,5 +90,7 @@ uv run pytest -q                     # 42 tests
 - **Phase 4** — monthly spend **budgets**, upstream **retries** w/ backoff,
   cross-provider **translation** (OpenAI→Anthropic), Prometheus **`/metrics`**,
   Docker/compose/Makefile.
+- **Phase 5** — **Redis-backed** rate limiting (in-memory fallback), real
+  **Stripe Checkout + signed webhooks** (mock fallback).
 
 See [`doc/design-and-implementation.md`](./doc/design-and-implementation.md).

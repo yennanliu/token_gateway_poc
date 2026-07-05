@@ -33,7 +33,7 @@ from gateway.config import get_settings  # noqa: E402
 from gateway.keys import display_prefix, generate_key, hash_key  # noqa: E402
 from gateway.main import create_app  # noqa: E402
 from gateway.models import ApiKey, Project, ProjectModel, Workspace  # noqa: E402
-from gateway.ratelimit import limiter  # noqa: E402
+from gateway import ratelimit  # noqa: E402
 
 get_settings.cache_clear()
 
@@ -49,7 +49,7 @@ async def engine():
     )
     db.configure_engine(eng)
     await db.create_all()
-    limiter.reset()
+    ratelimit.use_in_memory()
     metrics.reset()
     get_settings.cache_clear()
     yield eng

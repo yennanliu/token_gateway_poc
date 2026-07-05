@@ -7,7 +7,7 @@ this would sit behind proper user auth + RBAC (see memberships/roles).
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -205,3 +205,43 @@ async def topup(
         "credits_added": _credits(payment.credits_micros),
         "balance_credits": _credits(ws.credit_micros),
     }
+
+
+@router.post("/workspaces/{workspace_id}/checkout", dependencies=[Depends(require_admin)])
+async def checkout(
+    workspace_id: str,
+    body: TopUpRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """Create a Stripe Checkout Session and return its URL (Stripe mode only)."""
+    if not payments.is_stripe_enabled():
+        raise HTTPException(
+            status_code=400,
+            detail="Stripe not configured; use /topup for immediate (mock) credits.",
+        )
+    ws = await session.get(Workspace, workspace_id)
+    if ws is None:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    if body.amount_cents <= 0:
+        raise HTTPException(status_code=400, detail="amount_cents must be positive")
+    payment, url = await payments.create_checkout_session(
+        session, workspace_id=workspace_id, amount_cents=body.amount_cents
+    )
+    return {"payment_id": payment.id, "checkout_url": url, "status": payment.status}
+
+
+@router.post("/webhooks/stripe")
+async def stripe_webhook(
+    request: Request, session: AsyncSession = Depends(get_session)
+):
+    """Stripe webhook: verify signature, then settle the referenced payment.
+
+    Not admin-token protected — authenticity comes from the Stripe signature.
+    """
+    payload = await request.body()
+    sig = request.headers.get("stripe-signature", "")
+    secret = get_settings().stripe_webhook_secret
+    if not payments.verify_stripe_signature(payload, sig, secret):
+        raise HTTPException(status_code=400, detail="Invalid signature")
+    result = await payments.handle_webhook_event(session, payload)
+    return {"result": result}
