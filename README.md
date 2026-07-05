@@ -9,6 +9,8 @@ limiting, and a minimal Vue console.
 Point any provider SDK at this gateway by changing only the **base URL** and
 **API key** — no wrapper library.
 
+📖 繁體中文說明：[`doc/README.zh-TW.md`](./doc/README.zh-TW.md)
+
 Design docs live in [`doc/`](./doc): the gateway concept, how to build one, and
 the [design & implementation plan](./doc/design-and-implementation.md).
 
